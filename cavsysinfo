@@ -1,0 +1,138 @@
+# Gather data from Cavium systems relevant to benchmarking---
+#   dmidecode -t0
+#     firmware vendor, version, and release date
+#   dmidecode -t4
+#     cpu type, cpu speed, number of cores, number of HW threads,
+#   dmidecode -t17 (or something else?)
+#     amount of memory, memory speed,
+#   uname -a
+#     kernel version, 
+#   ldd
+#     glibc version,
+#   <cmd> --version
+#     (gcc version), (java # version), (clang version), (gfortran version),
+#     (flang vesion)
+
+# TODO
+#   √ (JSON) Decide on data format---JSON, yaml, java property lists (meh)
+#   Have both processed/interpreted and raw output capture
+#   Add kernel version, include distro
+#   Add glibc version √, gfortran version, flang version
+
+# Initial JSON design
+#   { "CaviumSysinfoVersion": "1", string : value, ...}
+# where string : value form basic key-value pairs.
+# keys: BIOSVendor, BIOSVersion, BIOReleaseDate
+#       ProcessorManufacturer, ProcessorID, ProcessorVersion, ProcessorMaxSpeed,
+#       ProcessorCurrentSpeed, ProcessorPartNumber, ProcessorCoreCount,
+#       ProcessorCoreEnabled, ProcessorNumHWThreads,
+#       MemoryAmount, MemorySpeed
+#       KernelVersion, KernelRaw,
+#       GLIBCVersion, GLIBCVersionRaw
+#       GCCPath, GCCVersion, GCCVersionRaw,
+#       JavaPath, JavaVersion, JavaVersionRaw
+#       ClangPath, ClangVersion, ClangVersionRaw,
+#       GfortranVersion, GfortranVersionRaw,
+#       FlangVersion, FlangVersionRaw
+
+errExitMsg() {
+  echo $*
+  exit 1
+}
+
+mkMultiLineJsonStr() {
+  awk '{ printf("%s\\n", $0)}'
+}
+
+# use dmidecode if available; no other option currently
+if [ ! `which dmidecode` ]
+then
+  errExitMsg "dmidecode not found"
+fi
+
+# sudo dmidecode -t 0 -t 4
+# -t 0 is BIOS/Firmware, -t 4 is processor
+#sudo dmidecode -t0 | egrep 'Vendor|Version|Release Date'
+# XXX early exit to test awk-based function
+extractFromDMIByKeyword() {
+  local tn; tn=$1
+  local dmiTags; dmiTags=$2
+  local jsonNames; jsonNames=$3
+  sudo dmidecode -t${tn} |
+    awk -v dmiTags="${dmiTags}" -v jsonNames=${jsonNames}\
+        'BEGIN { split(dmiTags, numToTags, "|")
+                 for (num in numToTags) tags[numToTags[num]] = num; 
+                 split(jsonNames, numToJsonNames, "|")
+               }
+               { sub(/^[ \t]*/, ""); colIdx = index($0, ":")
+                 name = substr($0, 1, colIdx-1)
+                 if (name in tags) {
+                   value = substr($0, colIdx+1); sub(/^[ \t]*/, "", value)
+                   printf("  \"%s\" : \"%s\",\n",
+                          numToJsonNames[tags[name]], value)
+                 }
+                 else next;
+               }'
+}
+
+biosVars=$(extractFromDMIByKeyword 0 'Vendor|Version|Release Date' \
+                          'BIOSVendor|BIOSVersion|BIOSReleaseDate')
+
+# TODO ProcessorNumHWThreads
+procVars=$(extractFromDMIByKeyword 4 'Manufacturer|ID|Version|Max Speed|Current Speed|Part Number|Core Count|Core Enabled' \
+                          'ProcessorManufacturer|ProcessorID|ProcessorVersion|ProcessorMaxSpeed|ProcessorCurrentSpeed|ProcessorPartNumber|ProcessorCoreCount|ProcessorCoreEnabled')
+
+KernelVersion=$(uname -r)
+KernelRaw=`uname -a |  mkMultiLineJsonStr`
+
+GLIBCVersionRaw=`ldd --version | mkMultiLineJsonStr`
+
+if [ `which gcc` ]
+then
+  GCCPath=`which gcc`
+  GCCVersionRaw=`gcc --version  | mkMultiLineJsonStr`
+fi
+
+if [ `which java` ]
+then
+  JavaPath=`which java`
+  JavaVersion=$(java -version 2>&1 | awk 'NR==1{gsub("\"","",$3); print $3}')
+  JavaVersionRaw=`java -version 2>&1 | mkMultiLineJsonStr`
+fi
+
+if [ `which clang` ]
+then
+  ClangPath=`which clang`
+  ClangVersionRaw=`clang --version |  mkMultiLineJsonStr`
+  ClangVersion=$(echo ${ClangVersionRaw} | awk '{print $3}')
+fi
+
+if [ `which flang` ]
+then
+  FlangPath=`which flang`
+  FlangVersionRaw=`flang --version |  mkMultiLineJsonStr`
+  # TODO parsed flang version
+  #FlangVersion=$(echo ${FlangVersionRaw} | awk '{print $3}')
+fi
+
+# EOF not quoted => using variable substitution; <<- => strip leading tabs
+cat <<- EOF
+	{
+	  "CaviumSysinfoVersion" : "1",
+	${biosVars}
+	${procVars}
+	  "KernelVersion", "${KernelVersion}",
+	  "KernelRaw" : "${KernelRaw}",
+	  "GLIBCVersionRaw" : "${GLIBCVersionRaw}",
+	  "GCCPath" : "${GCCPath}",
+	  "GCCVersionRaw" : "${GCCVersionRaw}",
+	  "JavaPath" : "${JavaPath}"
+	  "JavaVersion" : "${JavaVersion}",
+	  "JavaVersionRaw" : "${JavaVersionRaw}",
+	  "ClangPath" : "${ClangPath}"
+	  "ClangVersion" : "${ClangVersion}",
+	  "ClangVersionRaw" : "${ClangVersionRaw}",
+	  "FlangPath" : "${FlangPath}",
+	  "FlangVersionRaw": "${FlangVersionRaw}"
+}
+EOF
