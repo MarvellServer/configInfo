@@ -52,8 +52,6 @@ fi
 
 # sudo dmidecode -t 0 -t 4
 # -t 0 is BIOS/Firmware, -t 4 is processor
-#sudo dmidecode -t0 | egrep 'Vendor|Version|Release Date'
-# XXX early exit to test awk-based function
 extractFromDMIByKeyword() {
   local tn; tn=$1
   local dmiTags; dmiTags=$2
@@ -78,9 +76,14 @@ extractFromDMIByKeyword() {
 biosVars=$(extractFromDMIByKeyword 0 'Vendor|Version|Release Date' \
                           'BIOSVendor|BIOSVersion|BIOSReleaseDate')
 
-# TODO ProcessorNumHWThreads
-procVars=$(extractFromDMIByKeyword 4 'Manufacturer|ID|Version|Max Speed|Current Speed|Part Number|Core Count|Core Enabled' \
-                          'ProcessorManufacturer|ProcessorID|ProcessorVersion|ProcessorMaxSpeed|ProcessorCurrentSpeed|ProcessorPartNumber|ProcessorCoreCount|ProcessorCoreEnabled')
+procVars=$(extractFromDMIByKeyword 4 'Manufacturer|ID|Version|Max Speed|Current Speed|Part Number|Core Count|Core Enabled|Thread Count' \
+                          'ProcessorManufacturer|ProcessorID|ProcessorVersion|ProcessorMaxSpeed|ProcessorCurrentSpeed|ProcessorPartNumber|ProcessorCoreCount|ProcessorCoreEnabled|ProcessorNumHWThreads')
+
+# TODO refactor extractFromDMIByKeyword to parse /proc/meminfo to get 
+# MemoryAmount, MemorySpeed
+# $ cat /proc/meminfo
+# MemTotal:       133959232 kB
+memVars=$(extractFromDMIByKeyword 17 'Speed' 'MemorySpeed' | sed -n 1p )
 
 KernelVersion=$(uname -r)
 KernelRaw=`uname -a |  mkMultiLineJsonStr`
@@ -121,6 +124,7 @@ cat <<- EOF
 	  "CaviumSysinfoVersion" : "1",
 	${biosVars}
 	${procVars}
+	${memVars}
 	  "KernelVersion", "${KernelVersion}",
 	  "KernelRaw" : "${KernelRaw}",
 	  "GLIBCVersionRaw" : "${GLIBCVersionRaw}",
