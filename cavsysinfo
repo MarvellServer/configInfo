@@ -54,36 +54,60 @@ fi
 # -t 0 is BIOS/Firmware, -t 4 is processor
 extractFromDMIByKeyword() {
   local tn; tn=$1
-  local dmiTags; dmiTags=$2
-  local jsonNames; jsonNames=$3
+  local isMulti=$2
+  local dmiTags; dmiTags=$3
+  local jsonNames; jsonNames=$4
+  local multiName; multiName=$5
   sudo dmidecode -t${tn} |
-    awk -v dmiTags="${dmiTags}" -v jsonNames=${jsonNames}\
-        'BEGIN { split(dmiTags, numToTags, "|")
-                 for (num in numToTags) tags[numToTags[num]] = num; 
-                 split(jsonNames, numToJsonNames, "|")
-               }
-               { sub(/^[ \t]*/, ""); colIdx = index($0, ":")
-                 name = substr($0, 1, colIdx-1)
-                 if (name in tags) {
-                   value = substr($0, colIdx+1); sub(/^[ \t]*/, "", value)
-                   printf("  \"%s\" : \"%s\",\n",
-                          numToJsonNames[tags[name]], value)
-                 }
-                 else next;
-               }'
+    awk -v isMulti="${isMulti}" -v dmiTags="${dmiTags}"\
+        -v jsonNames="${jsonNames}" -v multiName="${multiName}" \
+        'BEGIN {
+             split(dmiTags, numToTags, "|")
+             for (num in numToTags) tags[numToTags[num]] = num; 
+             split(jsonNames, numToJsonNames, "|")
+             seenHandle = 0
+             haveLastLine = 0
+             if (isMulti) printf("\"%s\" : [\n", multiName)
+          }
+          END { if (isMulti) printf("]\n"); else printf("%s\n", lastLine)}
+          isMulti && /^Handle/ {
+              if (!seenHandle) 
+                  printf("{\n")
+              else
+                  printf(", {\n")
+              seenHandle = 1; 
+          }
+          /^$/ && isMulti && seenHandle {
+              if (haveLastLine) printf("%s\n}\n", lastLine)
+              haveLastLine = 0
+          }
+          {
+              sub(/^[ \t]*/, ""); colIdx = index($0, ":")
+              name = substr($0, 1, colIdx-1)
+              if (name in tags) {
+                  if (haveLastLine) printf("%s,\n", lastLine);
+                  value = substr($0, colIdx+1); sub(/^[ \t]*/, "", value)
+                  lastLine = sprintf("  \"%s\" : \"%s\"",
+                                     numToJsonNames[tags[name]], value)
+                  haveLastLine = 1
+              }
+              else next;
+          }'
 }
 
-biosVars=$(extractFromDMIByKeyword 0 'Vendor|Version|Release Date' \
+biosVars=$(extractFromDMIByKeyword 0 0 'Vendor|Version|Release Date' \
                           'BIOSVendor|BIOSVersion|BIOSReleaseDate')
 
-procVars=$(extractFromDMIByKeyword 4 'Manufacturer|ID|Version|Max Speed|Current Speed|Part Number|Core Count|Core Enabled|Thread Count' \
-                          'ProcessorManufacturer|ProcessorID|ProcessorVersion|ProcessorMaxSpeed|ProcessorCurrentSpeed|ProcessorPartNumber|ProcessorCoreCount|ProcessorCoreEnabled|ProcessorNumHWThreads')
+# there may be more than one processor, so iterate over each type 4 entry
+procVars=$(extractFromDMIByKeyword 4 1 'Socket Designation|Manufacturer|ID|Version|Max Speed|Current Speed|Part Number|Core Count|Core Enabled|Thread Count' \
+                          'ProcessorSocket|ProcessorManufacturer|ProcessorID|ProcessorVersion|ProcessorMaxSpeed|ProcessorCurrentSpeed|ProcessorPartNumber|ProcessorCoreCount|ProcessorCoreEnabled|ProcessorNumHWThreads' 'Processors')
 
 # TODO refactor extractFromDMIByKeyword to parse /proc/meminfo to get 
 # MemoryAmount, MemorySpeed
 # $ cat /proc/meminfo
 # MemTotal:       133959232 kB
-memVars=$(extractFromDMIByKeyword 17 'Speed' 'MemorySpeed' | sed -n 1p )
+memVars=$(extractFromDMIByKeyword 17 0 'Speed' 'MemorySpeed' |
+          awk 'NR==1 { sub(",$","",$0); print $0 }' )
 
 KernelVersion=$(uname -r)
 KernelRaw=`uname -a |  mkMultiLineJsonStr`
@@ -100,7 +124,8 @@ if [ `which java` ]
 then
   JavaPath=`which java`
   JavaVersion=$(java -version 2>&1 | awk 'NR==1{gsub("\"","",$3); print $3}')
-  JavaVersionRaw=`java -version 2>&1 | mkMultiLineJsonStr`
+  JavaVersionRaw=$(java -version 2>&1 | mkMultiLineJsonStr |
+                   awk '{gsub("\"","",$0); print $0}')
 fi
 
 if [ `which clang` ]
@@ -121,19 +146,19 @@ fi
 # EOF not quoted => using variable substitution; <<- => strip leading tabs
 cat <<- EOF
 	{
-	  "CaviumSysinfoVersion" : "1",
-	${biosVars}
-	${procVars}
-	${memVars}
-	  "KernelVersion", "${KernelVersion}",
+	  "CaviumSysinfoVersion" : "2",
+	  ${biosVars},
+	  ${procVars},
+	  ${memVars},
+	  "KernelVersion" : "${KernelVersion}",
 	  "KernelRaw" : "${KernelRaw}",
 	  "GLIBCVersionRaw" : "${GLIBCVersionRaw}",
 	  "GCCPath" : "${GCCPath}",
 	  "GCCVersionRaw" : "${GCCVersionRaw}",
-	  "JavaPath" : "${JavaPath}"
+	  "JavaPath" : "${JavaPath}",
 	  "JavaVersion" : "${JavaVersion}",
 	  "JavaVersionRaw" : "${JavaVersionRaw}",
-	  "ClangPath" : "${ClangPath}"
+	  "ClangPath" : "${ClangPath}",
 	  "ClangVersion" : "${ClangVersion}",
 	  "ClangVersionRaw" : "${ClangVersionRaw}",
 	  "FlangPath" : "${FlangPath}",
