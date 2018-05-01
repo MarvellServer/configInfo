@@ -106,10 +106,12 @@ procVars=$(extractFromDMIByKeyword 4 1 'Socket Designation|Manufacturer|ID|Versi
 # MemoryAmount, MemorySpeed
 # $ cat /proc/meminfo
 # MemTotal:       133959232 kB
+memAmount=$(awk '/^MemTotal/{printf("%.0f", $2/1024/1024)}' < /proc/meminfo )
 memVars=$(extractFromDMIByKeyword 17 0 'Speed' 'MemorySpeed' |
           awk 'NR==1 { sub(",$","",$0); print $0 }' )
 
 KernelVersion=$(uname -r)
+KernelDistro=$(if [[ -x `which lsb_release` ]]; then lsb_release --id | awk '{print $3}'; fi)
 KernelRaw=`uname -a |  mkMultiLineJsonStr`
 
 GLIBCVersionRaw=`ldd --version | mkMultiLineJsonStr`
@@ -150,8 +152,10 @@ cat <<- EOF
 	  ${biosVars},
 	  ${procVars},
 	  ${memVars},
+	  "MemoryAmount" : "${memAmount}",
 	  "KernelVersion" : "${KernelVersion}",
 	  "KernelRaw" : "${KernelRaw}",
+	  "KernelDistro" : "${KernelDistro}",
 	  "GLIBCVersionRaw" : "${GLIBCVersionRaw}",
 	  "GCCPath" : "${GCCPath}",
 	  "GCCVersionRaw" : "${GCCVersionRaw}",

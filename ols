@@ -1,0 +1,23 @@
+# Extract one line summary from cavsysinfo
+# (#sockets s # cores c (#SMT SMT), #RAM GB, #processor,
+# #distro (#kernel version), FW #fwversion, #memSpeed MHz RAM speed)
+
+# Requires
+#   jshon http://kmkeen.com/jshon/ https://github.com/keenerd/jshon.git
+#     which requires jansson  https://github.com/akheron/jansson.git
+
+export LD_LIBRARY_PATH=/usr/local/lib
+numSockets=$(jshon -e Processors -l < t)
+numCores=$(jshon -e Processors -e 0 -e ProcessorCoreEnabled -u < t)
+# if numHWThreads isn't reported, then set to 0
+numHWThreads=$(jshon -e Processors -e 0 -e ProcessorNumHWThreads -u < t 2>/dev/null || echo "0")
+memAmount=$(jshon -e MemoryAmount -u < t 2>/dev/null || echo "0")
+procPartNum=$(jshon -e Processors -e 0 -e ProcessorPartNumber -u < t 2>/dev/null || echo "0")
+numSMT=$(( ${numHWThreads} / ${numCores} ))
+kernelDistro=$(jshon -e KernelDistro -u < t)
+kernelVersion=$(jshon -e KernelVersion -u < t)
+fwVersion=$(jshon -e BIOSVersion < t | awk '{print $NF}')
+memSpeed=$(jshon -e MemorySpeed -u < t | awk '{print $1}')
+printf "(%ss%dc (%dSMT) %dGB, %s, %s (%s), FW %s, %dMHz RAM speed)\n" \
+   ${numSockets} ${numCores} ${numSMT} ${memAmount} ${procPartNum} \
+   ${kernelDistro} ${kernelVersion} ${fwVersion} ${memSpeed}
