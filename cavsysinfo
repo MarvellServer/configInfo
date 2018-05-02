@@ -111,6 +111,8 @@ memVars=$(extractFromDMIByKeyword 17 0 'Speed' 'MemorySpeed' |
           awk 'NR==1 { sub(",$","",$0); print $0 }' )
 
 KernelVersion=$(uname -r)
+# see:
+# https://www.cyberciti.biz/faq/find-linux-distribution-name-version-number/
 KernelDistro=$(if [[ -x `which lsb_release` ]]; then lsb_release --id | awk '{print $3}'; fi)
 KernelRaw=`uname -a |  mkMultiLineJsonStr`
 
