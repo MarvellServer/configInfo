@@ -115,6 +115,7 @@ KernelVersion=$(uname -r)
 # https://www.cyberciti.biz/faq/find-linux-distribution-name-version-number/
 KernelDistro=$(if [[ -x `which lsb_release` ]]; then lsb_release --id | awk '{print $3}'; fi)
 KernelRaw=`uname -a |  mkMultiLineJsonStr`
+UlimitRaw=`ulimit -a | mkMultiLineJsonStr`
 
 GLIBCVersionRaw=`ldd --version | mkMultiLineJsonStr`
 
@@ -158,6 +159,7 @@ cat <<- EOF
 	  "KernelVersion" : "${KernelVersion}",
 	  "KernelRaw" : "${KernelRaw}",
 	  "KernelDistro" : "${KernelDistro}",
+	  "UlimitRaw" : "${UlimitRaw}",
 	  "GLIBCVersionRaw" : "${GLIBCVersionRaw}",
 	  "GCCPath" : "${GCCPath}",
 	  "GCCVersionRaw" : "${GCCVersionRaw}",
