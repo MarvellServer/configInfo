@@ -95,10 +95,35 @@ extractFromDMIByKeyword() {
           }'
 }
 
-biosVars=$(extractFromDMIByKeyword 0 0 'Vendor|Version|Release Date' \
+# prefer non-dmidecode version
+DMIDIR=/sys/devices/virtual/dmi/id/
+if [ -d ${DMIDIR} ]
+then
+  BIOSVendor=$(cat /${DMIDIR}bios_date)
+  BIOSVersion=$(cat /${DMIDIR}bios_version)
+  BIOSReleaseDate=$(cat /${DMIDIR}bios_date)
+  biosVars="\"BIOSVendor\" : \"${BIOSVendor}\",
+	  \"BIOSVersion\" : \"${BIOSVersion}\",
+	  \"BIOSReleaseDate\" : \"${BIOSReleaseDate}\""
+else
+  biosVars=$(extractFromDMIByKeyword 0 0 'Vendor|Version|Release Date' \
                           'BIOSVendor|BIOSVersion|BIOSReleaseDate')
+fi
 
 # there may be more than one processor, so iterate over each type 4 entry
+# $ lscpu
+# Architecture:          aarch64
+# Byte Order:            Little Endian
+# CPU(s):                48
+# On-line CPU(s) list:   0-47
+# Thread(s) per core:    1
+# Core(s) per socket:    48
+# Socket(s):             1
+# NUMA node(s):          1
+# L1d cache:             32K
+# L1i cache:             78K
+# L2 cache:              16384K
+# NUMA node0 CPU(s):     0-47
 procVars=$(extractFromDMIByKeyword 4 1 'Socket Designation|Manufacturer|ID|Version|Max Speed|Current Speed|Part Number|Core Count|Core Enabled|Thread Count' \
                           'ProcessorSocket|ProcessorManufacturer|ProcessorID|ProcessorVersion|ProcessorMaxSpeed|ProcessorCurrentSpeed|ProcessorPartNumber|ProcessorCoreCount|ProcessorCoreEnabled|ProcessorNumHWThreads' 'Processors')
 
@@ -116,6 +141,11 @@ KernelVersion=$(uname -r)
 KernelDistro=$(if [[ -x `which lsb_release` ]]; then lsb_release --id | awk '{print $3}'; fi)
 KernelRaw=`uname -a |  mkMultiLineJsonStr`
 UlimitRaw=`ulimit -a | mkMultiLineJsonStr`
+
+SysctlJSON=`sysctl -a 2>/dev/null | grep -E "^kernel|^vm" |
+    grep -v ".sched_domain." |
+    gawk -F\ \=\  '{printf("\"%s\" : \"%s\"\n", $1, $2)}' | sed '$!s/$/,/' |
+    sed 's/\t//g'`
 
 GLIBCVersionRaw=`ldd --version | mkMultiLineJsonStr`
 
@@ -170,6 +200,7 @@ cat <<- EOF
 	  "ClangVersion" : "${ClangVersion}",
 	  "ClangVersionRaw" : "${ClangVersionRaw}",
 	  "FlangPath" : "${FlangPath}",
-	  "FlangVersionRaw": "${FlangVersionRaw}"
+	  "FlangVersionRaw": "${FlangVersionRaw}",
+	  "SysctlJSON" : { ${SysctlJSON} }
 }
 EOF
